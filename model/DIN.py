@@ -7,7 +7,7 @@ EMBEDDING_DIM = 8
 LEARNING_RATE = 1e-4
 REGULARIZATION = 1e-6
 BATCH_SIZE = 4096
-EPOCH = 10
+EPOCH = 100
 
 class Dice(torch.nn.Module):
 
@@ -29,7 +29,8 @@ class ActivationUnit(torch.nn.Module):
     def __init__(self, embed_dim=4):
         super(ActivationUnit, self).__init__()
         self.mlp = torch.nn.Sequential(
-            torch.nn.Linear(embed_dim * (embed_dim + 2), 36),
+            # torch.nn.Linear(embed_dim * (embed_dim + 2), 36), 外积的线性层维度
+            torch.nn.Linear(embed_dim * 3, 36), # 内积的线性层维度
             Dice(),
             torch.nn.Linear(36, 1),
         )
@@ -38,16 +39,22 @@ class ActivationUnit(torch.nn.Module):
         behaviors = x[:, :-1]
         num_behaviors = behaviors.shape[1]
 
+        # (batch_size, num_behaviors, embed_dims)
         ads = x[:, [-1] * num_behaviors]
 
         # outer product
         embed_dim = x.shape[-1]
         i1, i2 = [], []
+
         for i in range(embed_dim):
             for j in range(embed_dim):
                 i1.append(i)
                 i2.append(j)
-        p = behaviors[:, :, i1].mul(ads[:, :, i2]).reshape(behaviors.shape[0], behaviors.shape[1], -1)
+        # 一个列向量乘以一个行向量称作向量的外积，外积是一种特殊的克罗内克积，结果是一个矩阵，即叉乘,这里是外积操作。
+        # p = behaviors[:, :, i1].mul(ads[:, :, i2]).reshape(behaviors.shape[0], behaviors.shape[1], -1)
+
+        # 一个行向量乘以一个列向量称作向量的内积，又叫作点积，结果是一个数，即点乘；
+        p = behaviors.mul(ads)
 
         att = self.mlp(torch.cat([behaviors, p, ads], dim=2))
         return att
@@ -73,8 +80,7 @@ class DeepInterestNetwork(torch.nn.Module):
         behaviors_ad_embeddings = self.embed(x).mul(mask)  # (batch_size, num_behaviors+1, embed_dim)
         att = self.attention(behaviors_ad_embeddings)  # (batch_size, num_behaviors, 1)
 
-        weighted_behaviors = behaviors_ad_embeddings[:, :-1].mul(mask[:, :-1]).mul(
-            att)  # (batch_size, num_behaviors, embed_dim)
+        weighted_behaviors = behaviors_ad_embeddings[:, :-1].mul(att)  # (batch_size, num_behaviors, embed_dim)
         user_interest = weighted_behaviors.sum(dim=1)  # (batch_size, embed_dim)
 
         concated = torch.hstack([user_interest, behaviors_ad_embeddings[:, -1]])
