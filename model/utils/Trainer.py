@@ -65,6 +65,8 @@ class Trainer:
 
             if trials:
                 valid_loss, valid_metric = self.test(valid_x, valid_y)
+                # 为了防止DIEN中的rnn训练过程中出现cudnn RNN backward can only be called in training mode的问题，因为eval()模式下rnn不能进行反向传播
+                self.model.train()
                 valid_loss_list.append(valid_loss.item())
                 if not earlyStopper.iscontinuable(valid_metric):
                     break
